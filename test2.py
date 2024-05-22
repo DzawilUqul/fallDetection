@@ -3,14 +3,14 @@ import numpy as np
 import cv2
 from pathlib import Path
 
-threshold = 10
+threshold = 5
 aspect_ratio1 = 0.2
 aspect_ratio2 = 0.8
 
 def pre_crop(frame, crop_x, crop_y, crop_w, crop_h):
     return frame[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
 
-VIDEO_PATH = 'datasets/fenix/fall-01-cam0.mp4'
+VIDEO_PATH = 'fall_datasets/fall3.mp4'
 # x, y, w, h
 CROP_REGION_RELATIVE = (0.5, 0, 0.5, 1)
 
@@ -138,7 +138,7 @@ for frame, mask in zip(frames, frames_mask):
         cv2.putText(frame_rgb, "Fall Detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
     cv2.imshow("Frame", frame_rgb)
-    if cv2.waitKey(1) & 0xFF == ord("q"):
+    if cv2.waitKey(100) & 0xFF == ord("q"):
         break
 
 cap.release()
