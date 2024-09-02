@@ -10,7 +10,7 @@ aspect_ratio2 = 0.8
 def pre_crop(frame, crop_x, crop_y, crop_w, crop_h):
     return frame[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
 
-VIDEO_PATH = 'fall_datasets/fall3.mp4'
+VIDEO_PATH = 'datasets/fenix/fall-01-cam0.mp4'
 # x, y, w, h
 CROP_REGION_RELATIVE = (0.5, 0, 0.5, 1)
 
@@ -50,7 +50,6 @@ while True:
     else:
         frames.append(frame)
 
-
 # Background estimation
 bg = np.median(frames, axis=0).astype(np.uint8)
 bg_gray = cv2.cvtColor(bg, cv2.COLOR_BGR2GRAY)
@@ -60,21 +59,24 @@ frames_mask = []
 for frame in frames:
     frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     diff = cv2.absdiff(frame_gray, bg_gray)
-    mask = cv2.threshold(diff, 15, 255, cv2.THRESH_BINARY)[1]
+    mask = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)[1]
     frames_mask.append(mask)
 
 # Kalman filter initialization
-kalman = cv2.KalmanFilter(4, 2)
-kalman.measurementMatrix = np.array([[1, 0, 0, 0],
-                                     [0, 1, 0, 0]], np.float32)
-kalman.transitionMatrix = np.array([[1, 0, 1, 0],
-                                    [0, 1, 0, 1],
-                                    [0, 0, 1, 0],
-                                    [0, 0, 0, 1]], np.float32)
-kalman.processNoiseCov = np.array([[1, 0, 0, 0],
-                                   [0, 1, 0, 0],
-                                   [0, 0, 1, 0],
-                                   [0, 0, 0, 1]], np.float32) * 0.03
+kalman = cv2.KalmanFilter(8, 4)
+kalman.measurementMatrix = np.array([[1, 0, 0, 0, 0, 0, 0, 0],
+                                     [0, 1, 0, 0, 0, 0, 0, 0],
+                                     [0, 0, 0, 0, 1, 0, 0, 0],
+                                     [0, 0, 0, 0, 0, 1, 0, 0]], np.float32)
+kalman.transitionMatrix = np.array([[1, 0, 1, 0, 0, 0, 0, 0],
+                                    [0, 1, 0, 1, 0, 0, 0, 0],
+                                    [0, 0, 1, 0, 0, 0, 0, 0],
+                                    [0, 0, 0, 1, 0, 0, 0, 0],
+                                    [0, 0, 0, 0, 1, 0, 1, 0],
+                                    [0, 0, 0, 0, 0, 1, 0, 1],
+                                    [0, 0, 0, 0, 0, 0, 1, 0],
+                                    [0, 0, 0, 0, 0, 0, 0, 1]], np.float32)
+kalman.processNoiseCov = np.eye(8, dtype=np.float32) * 0.03
 
 # Initialize variables for fall detection
 previous_center = None
@@ -102,13 +104,18 @@ for frame, mask in zip(frames, frames_mask):
         # Calculate the center of the bounding box
         cx, cy = x + w // 2, y + h // 2
 
-        # Measurement update
-        measurement = np.array([[np.float32(cx)], [np.float32(cy)]])
+        # Measurement update (bounding box center and size)
+        measurement = np.array([[np.float32(cx)], [np.float32(cy)], [np.float32(w)], [np.float32(h)]])
         kalman.correct(measurement)
 
-        # Draw the bounding box and center
-        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)  # Draw the center dot
+        # Predict next position and size
+        prediction = kalman.predict()
+        pred_cx, pred_cy, pred_w, pred_h = int(prediction[0]), int(prediction[1]), int(prediction[4]), int(prediction[5])
+
+        # Draw the predicted bounding box
+        pred_x, pred_y = pred_cx - pred_w // 2, pred_cy - pred_h // 2
+        cv2.rectangle(frame, (pred_x, pred_y), (pred_x + pred_w, pred_y + pred_h), (0, 255, 0), 2)
+        cv2.circle(frame, (pred_cx, pred_cy), 5, (0, 0, 255), -1)  # Draw the center dot
 
         # Check for fall
         if previous_center is not None:
@@ -126,11 +133,13 @@ for frame, mask in zip(frames, frames_mask):
 
         previous_center = (cx, cy)
     else:
-        # No object detected, predict next position
+        # No object detected, predict next position and size
         prediction = kalman.predict()
-        pred_cx, pred_cy = int(prediction[0]), int(prediction[1])
+        pred_cx, pred_cy, pred_w, pred_h = int(prediction[0]), int(prediction[1]), int(prediction[4]), int(prediction[5])
 
-        # Draw the predicted position
+        # Draw the predicted bounding box
+        pred_x, pred_y = pred_cx - pred_w // 2, pred_cy - pred_h // 2
+        cv2.rectangle(frame, (pred_x, pred_y), (pred_x + pred_w, pred_y + pred_h), (255, 0, 0), 2)
         cv2.circle(frame, (pred_cx, pred_cy), 5, (255, 0, 0), -1)  # Draw the predicted center dot
 
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -138,7 +147,7 @@ for frame, mask in zip(frames, frames_mask):
         cv2.putText(frame_rgb, "Fall Detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
     cv2.imshow("Frame", frame_rgb)
-    if cv2.waitKey(100) & 0xFF == ord("q"):
+    if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
 cap.release()
